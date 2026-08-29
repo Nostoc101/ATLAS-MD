@@ -102,12 +102,12 @@ cmd({
     let body = '';
     for (const [category, list] of groups) {
       const icon = CATEGORY_ICONS[category] || '📁';
-      body += `\n> *⇶ ${icon} \`${categoryTitle(category)}\`*\n> *╭┄┄┄┄┄┄┄┄┄┄┄┈┈┈ᕗ*\n`;
-      for (const c of list) body += `> *│✦ ${prefix}${smallcap(c.pattern)}*\n`;
-      body += '> *╰┄┄┄┄┄┄┄┄┄┄┄┈┈┈ᕗ*\n';
+      body += `\n*⥤ ${icon} \`${categoryTitle(category)}\`*\n*╭┄┄┄┄┄┄┄┄┄┄┄┈┈┈ᕗ*\n`;
+      for (const c of list) body += `*│✦ ${prefix}${smallcap(c.pattern)}*\n`;
+      body += '*╰┄┄┄┄┄┄┄┄┄┄┄┈┈┈ᕗ*\n';
     }
 
-    const caption = `> *╭┄┄『 \`𝙸𝙽𝙵𝙾 𝙱𝙾𝚃\` 』┄❍*\n> *│✦ ${t(chat, 'menu_prefix')}: 〔${prefix}〕*\n> *│✦ 𝙿𝙻𝙰𝚃𝙴𝙵𝙾𝚁𝙼𝙴 : 𝚁𝙰𝙸𝙻𝚆𝙰𝚈*\n> *│✦ 𝙱𝙾𝚃: \`𝚂𝙸𝙳𝙳 𝙼𝙸𝙽𝙸 𝙱𝙾𝚃\`*\n> *│✦ ${t(chat, 'menu_commands')}: ${total}*\n> *│✦ ${t(chat, 'menu_time')}: ${now.format('HH:mm:ss')}*\n> *│✦ 𝙳𝙰𝚃𝙴: ${now.format('DD/MM/YYYY')}*\n> *│✦ ${t(chat, 'menu_owner')}: \`𝙳꯭𝙴͠𑁁𝚅᩿᩼ 𝚂꯭𝙸͠𑁁᩿᩼𝙳꯭᳟𝙳\`*\n> *╰┄┄┄┄┄┄┄┄┄┄┄┄⪼*\n${body}\n> ${config.DESCRIPTION || '𝙼𝚄𝙻𝚃𝙸-𝙳𝙴𝚅𝙸𝙲𝙴 𝚆𝙷𝙰𝚃𝚂𝙰𝙿𝙿 𝙱𝙾𝚃'}\n> *${config.BOT_FOOTER || '𝙼𝙰𝙳𝙴 𝙱𝚈 𝚂𝙸𝙳𝙳 𝚃𝙴𝙲𝙷𝚇 𝙾𝙵𝙲'}*`;
+    const caption = `*╭┄┄『 \`𝙸𝙽𝙵𝙾 𝙱𝙾𝚃\` 』*\n*│✦ ${t(chat, 'menu_prefix')}: 〔${prefix}〕*\n*│✦ 𝙿𝙻𝙰𝚃𝙴𝙵𝙾𝚁𝙼𝙴 : 𝚁𝙰𝙸𝙻𝚆𝙰𝚈*\n*│✦ 𝙱𝙾𝚃: \`𝚂𝙸𝙳𝙳 𝙼𝙸𝙽𝙸 𝙱𝙾𝚃\`*\n*│✦ ${t(chat, 'menu_commands')}: ${total}*\n*│✦ ${t(chat, 'menu_time')}: ${now.format('HH:mm:ss')}*\n*│✦ 𝙳𝙰𝚃𝙴: ${now.format('DD/MM/YYYY')}*\n> *│✦ ${t(chat, 'menu_owner')}: \`𝙳꯭𝙴͠𑁁𝚅᩿᩼ 𝚂꯭𝙸͠𑁁᩿᩼𝙳꯭᳟𝙳\`*\n*╰┄┄┄┄┄┄┄┄┄┄┄┄⪼*\n${body}\n${config.DESCRIPTION || '𝙼𝚄𝙻𝚃𝙸-𝙳𝙴𝚅𝙸𝙲𝙴 𝚆𝙷𝙰𝚃𝚂𝙰𝙿𝙿 𝙱𝙾𝚃'}\n> *${config.BOT_FOOTER || '𝙼𝙰𝙳𝙴 𝙱𝚈 𝚂𝙸𝙳𝙳 𝚃𝙴𝙲𝙷𝚇 𝙾𝙵𝙲'}*`;
 
     await conn.sendMessage(chat, {
       image: { url: image },
