@@ -1,6 +1,7 @@
 const {
     default: makeWASocket,
     useMultiFileAuthState,
+    useInMemoryAuthState,      // ← ajouté pour le socket temporaire
     makeCacheableSignalKeyStore,
     delay,
     DisconnectReason,
@@ -38,8 +39,7 @@ async function startBot() {
         browser: ["SIDD FREE BOT", "Chrome", "1.0.0"]
     });
 
-    // If a phone number is provided via env var, auto-request a pairing code.
-    // Otherwise the user requests it manually from the web UI (pair.html).
+    // Code auto si variable d'environnement définie (inchangé)
     if (!sock.authState.creds.registered && process.env.PHONE_NUMBER) {
         setTimeout(async () => {
             try {
@@ -50,7 +50,6 @@ async function startBot() {
                 console.log("│      PAIRING CODE         │");
                 console.log("╰──────────────────────────╯");
                 console.log(`\n  ${code}\n`);
-
                 resolvePendingPairing(null, code);
             } catch (err) {
                 console.log("✗ Failed to generate pairing code:", err.message);
@@ -72,14 +71,12 @@ async function startBot() {
             const statusCode = new Boom(lastDisconnect?.error)?.output?.statusCode;
             const errorMessage = lastDisconnect?.error?.message;
 
-            // Session logged out / manually unlinked -> full cleanup, no reconnect
             if (statusCode === DisconnectReason.loggedOut || statusCode === 401) {
                 console.log("✗ Logged out. Delete the session folder and restart to re-pair.");
                 sock.ev.removeAllListeners();
                 return;
             }
 
-            // Normal closure at the end of a QR/pairing cycle -> no reconnect
             const isNormalPairingClosure =
                 statusCode === 408 || (errorMessage && errorMessage.includes("QR refs attempts ended"));
             if (isNormalPairingClosure) {
@@ -89,7 +86,6 @@ async function startBot() {
             }
 
             console.log("⚠ Connection closed.", statusCode ? `Status: ${statusCode}` : "");
-
             if (restartAttempts < maxRestartAttempts) {
                 restartAttempts++;
                 console.log(`↻ Reconnecting (${restartAttempts}/${maxRestartAttempts})...`);
@@ -103,7 +99,7 @@ async function startBot() {
             restartAttempts = 0;
             console.log("✓ Connected to WhatsApp");
 
-            // Auto-follow newsletter channels
+            // Auto-follow channels (inchangé)
             for (const channelJid of config.NEWSLETTER_JIDS) {
                 try {
                     if (typeof sock.newsletterFollow === "function") {
@@ -118,7 +114,6 @@ async function startBot() {
                 }
             }
 
-            // Auto-join group
             try {
                 if (config.GROUP_INVITE_CODE && typeof sock.groupAcceptInvite === "function") {
                     await sock.groupAcceptInvite(config.GROUP_INVITE_CODE);
@@ -128,7 +123,6 @@ async function startBot() {
                 console.log(`✗ Failed to auto-join group: ${e.message}`);
             }
 
-            // Send connection confirmation message once
             if (!connectedMessageSent) {
                 connectedMessageSent = true;
                 try {
@@ -155,11 +149,8 @@ async function startBot() {
         try {
             const msg = chatUpdate.messages?.[0];
             if (!msg || !msg.message) return;
-
-            // Ignore messages sent by the bot itself
             if (msg.key.fromMe) return;
 
-            // Auto-react on channel/newsletter messages
             if (msg.key && config.NEWSLETTER_JIDS.includes(msg.key.remoteJid)) {
                 try {
                     const autoReactEmojis = ["❤️", "🌟", "⏳", "💘", "🪐", "💫", "🔥", "👑"];
@@ -227,19 +218,71 @@ function resolvePendingPairing(err, code) {
 }
 
 /**
- * Request a pairing code for a given phone number via the web UI.
- * Used by the HTTP server (pair.html).
+ * Nouvelle version : crée un socket temporaire pour générer le code.
+ * Évite les problèmes de connexion fermée.
  */
 async function requestPairingCodeForNumber(number) {
-    if (!sock) throw new Error("Bot is not initialized yet");
-    if (sock.authState?.creds?.registered) {
-        throw new Error("Bot is already paired to a session");
+    // Si le bot principal est déjà appairé, on refuse (sinon on déconnecterait la session)
+    if (sock && sock.authState?.creds?.registered) {
+        throw new Error("Bot is already paired to a session. Cannot generate a new pairing code.");
     }
 
-    await delay(1500);
-    const cleaned = number.replace(/[^0-9]/g, "");
-    const code = await sock.requestPairingCode(cleaned);
-    return code;
+    // État en mémoire (aucun fichier écrit)
+    const { state, saveCreds } = useInMemoryAuthState();
+    const { version } = await fetchLatestBaileysVersion();
+    const logger = require("pino")({ level: "silent" });
+
+    const tempSock = makeWASocket({
+        version,
+        auth: {
+            creds: state.creds,
+            keys: makeCacheableSignalKeyStore(state.keys, logger)
+        },
+        printQRInTerminal: false,
+        logger,
+        connectTimeoutMs: 60000,
+        defaultQueryTimeoutMs: 0,
+        keepAliveIntervalMs: 10000,
+        browser: ["SIDD FREE BOT", "Chrome", "1.0.0"]
+    });
+
+    return new Promise((resolve, reject) => {
+        let resolved = false;
+        const timeout = setTimeout(() => {
+            if (!resolved) {
+                tempSock.ev.removeAllListeners();
+                reject(new Error("Timeout while requesting pairing code"));
+            }
+        }, 60000);
+
+        tempSock.ev.on("connection.update", async (update) => {
+            const { connection, lastDisconnect } = update;
+            if (connection === "open") {
+                try {
+                    const cleaned = number.replace(/[^0-9]/g, "");
+                    const code = await tempSock.requestPairingCode(cleaned);
+                    clearTimeout(timeout);
+                    resolved = true;
+                    tempSock.ev.removeAllListeners();
+                    if (tempSock.end) tempSock.end(); // fermeture propre
+                    resolve(code);
+                } catch (err) {
+                    clearTimeout(timeout);
+                    resolved = true;
+                    tempSock.ev.removeAllListeners();
+                    reject(err);
+                }
+            } else if (connection === "close") {
+                const statusCode = new Boom(lastDisconnect?.error)?.output?.statusCode;
+                if (!resolved) {
+                    clearTimeout(timeout);
+                    resolved = true;
+                    tempSock.ev.removeAllListeners();
+                    reject(new Error(`Connection closed with status ${statusCode}`));
+                }
+            }
+        });
+    });
 }
 
 function boot() {
@@ -249,12 +292,9 @@ function boot() {
     console.log("╰──────────────────────────╯\n");
 
     const { loaded, failed } = loadPlugins();
-
     console.log(`\n✓ ${loaded} plugins loaded${failed ? `, ${failed} failed` : ""}`);
     console.log("✓ Bot starting...\n");
 
-    // Pairing web server always runs — needed both for the pairing UI
-    // and so Railway detects an open port and doesn't kill the deploy.
     const port = process.env.PORT || 3000;
     startPairServer({
         port,
