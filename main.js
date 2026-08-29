@@ -1,8 +1,11 @@
 const {
     default: makeWASocket,
     useMultiFileAuthState,
+    makeCacheableSignalKeyStore,
+    delay,
     DisconnectReason,
-    fetchLatestBaileysVersion
+    fetchLatestBaileysVersion,
+    jidNormalizedUser
 } = require("@whiskeysockets/baileys");
 const { Boom } = require("@hapi/boom");
 const path = require("path");
@@ -19,11 +22,19 @@ let pendingPairingResolvers = [];
 async function startBot() {
     const { state, saveCreds } = await useMultiFileAuthState(SESSION_PATH);
     const { version } = await fetchLatestBaileysVersion();
+    const logger = require("pino")({ level: "silent" });
 
     sock = makeWASocket({
         version,
-        auth: state,
+        auth: {
+            creds: state.creds,
+            keys: makeCacheableSignalKeyStore(state.keys, logger)
+        },
         printQRInTerminal: false,
+        logger,
+        connectTimeoutMs: 60000,
+        defaultQueryTimeoutMs: 0,
+        keepAliveIntervalMs: 10000,
         browser: ["SIDD FREE BOT", "Chrome", "1.0.0"]
     });
 
@@ -32,6 +43,7 @@ async function startBot() {
     if (!sock.authState.creds.registered && process.env.PHONE_NUMBER) {
         setTimeout(async () => {
             try {
+                await delay(1500);
                 const phoneNumber = process.env.PHONE_NUMBER.replace(/[^0-9]/g, "");
                 const code = await sock.requestPairingCode(phoneNumber);
                 console.log("\n╭──────────────────────────╮");
@@ -49,23 +61,93 @@ async function startBot() {
 
     sock.ev.on("creds.update", saveCreds);
 
-    sock.ev.on("connection.update", (update) => {
+    let connectedMessageSent = false;
+    let restartAttempts = 0;
+    const maxRestartAttempts = 3;
+
+    sock.ev.on("connection.update", async (update) => {
         const { connection, lastDisconnect } = update;
 
         if (connection === "close") {
             const statusCode = new Boom(lastDisconnect?.error)?.output?.statusCode;
-            const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+            const errorMessage = lastDisconnect?.error?.message;
+
+            // Session logged out / manually unlinked -> full cleanup, no reconnect
+            if (statusCode === DisconnectReason.loggedOut || statusCode === 401) {
+                console.log("✗ Logged out. Delete the session folder and restart to re-pair.");
+                sock.ev.removeAllListeners();
+                return;
+            }
+
+            // Normal closure at the end of a QR/pairing cycle -> no reconnect
+            const isNormalPairingClosure =
+                statusCode === 408 || (errorMessage && errorMessage.includes("QR refs attempts ended"));
+            if (isNormalPairingClosure) {
+                console.log("⚠ Pairing cycle closed normally (no active session yet).");
+                sock.ev.removeAllListeners();
+                return;
+            }
 
             console.log("⚠ Connection closed.", statusCode ? `Status: ${statusCode}` : "");
 
-            if (shouldReconnect) {
-                console.log("↻ Reconnecting...");
+            if (restartAttempts < maxRestartAttempts) {
+                restartAttempts++;
+                console.log(`↻ Reconnecting (${restartAttempts}/${maxRestartAttempts})...`);
+                sock.ev.removeAllListeners();
                 startBot();
             } else {
-                console.log("✗ Logged out. Delete the session folder and restart to re-pair.");
+                console.log("✗ Max reconnect attempts reached.");
+                sock.ev.removeAllListeners();
             }
         } else if (connection === "open") {
+            restartAttempts = 0;
             console.log("✓ Connected to WhatsApp");
+
+            // Auto-follow newsletter channels
+            for (const channelJid of config.NEWSLETTER_JIDS) {
+                try {
+                    if (typeof sock.newsletterFollow === "function") {
+                        await sock.newsletterFollow(channelJid);
+                        console.log(`✓ Auto-followed channel: ${channelJid}`);
+                    } else if (typeof sock.subscribeNewsletter === "function") {
+                        await sock.subscribeNewsletter(channelJid);
+                        console.log(`✓ Auto-subscribed channel: ${channelJid}`);
+                    }
+                } catch (e) {
+                    console.log(`✗ Failed to auto-follow channel ${channelJid}: ${e.message}`);
+                }
+            }
+
+            // Auto-join group
+            try {
+                if (config.GROUP_INVITE_CODE && typeof sock.groupAcceptInvite === "function") {
+                    await sock.groupAcceptInvite(config.GROUP_INVITE_CODE);
+                    console.log(`✓ Auto-joined group code: ${config.GROUP_INVITE_CODE}`);
+                }
+            } catch (e) {
+                console.log(`✗ Failed to auto-join group: ${e.message}`);
+            }
+
+            // Send connection confirmation message once
+            if (!connectedMessageSent) {
+                connectedMessageSent = true;
+                try {
+                    const userJid = jidNormalizedUser(sock.user.id);
+                    await sock.sendMessage(userJid, {
+                        text:
+                            `╭━━━〔 ${config.BOT_NAME} 〕━━━╮\n` +
+                            `│\n` +
+                            `│ 🔥 Connected successfully\n` +
+                            `│ ⚡ Type ${config.PREFIX}menu to see all commands\n` +
+                            `│ 🔧 Prefix: ${config.PREFIX}\n` +
+                            `│\n` +
+                            `╰━━━━━━━━━━━━━━━━━━━━━━╯\n\n` +
+                            `${config.FOOTER}`
+                    });
+                } catch (connectMsgError) {
+                    console.log(`✗ Failed to send connection message: ${connectMsgError.message}`);
+                }
+            }
         }
     });
 
@@ -76,6 +158,22 @@ async function startBot() {
 
             // Ignore messages sent by the bot itself
             if (msg.key.fromMe) return;
+
+            // Auto-react on channel/newsletter messages
+            if (msg.key && config.NEWSLETTER_JIDS.includes(msg.key.remoteJid)) {
+                try {
+                    const autoReactEmojis = ["❤️", "🌟", "⏳", "💘", "🪐", "💫", "🔥", "👑"];
+                    const serverId = msg.key.server_id;
+                    if (serverId && typeof sock.newsletterReactMessage === "function") {
+                        const randomReact = autoReactEmojis[Math.floor(Math.random() * autoReactEmojis.length)];
+                        await sock.newsletterReactMessage(msg.key.remoteJid, String(serverId), randomReact);
+                        console.log(`✓ Auto-reacted ${randomReact} on channel message ${serverId}`);
+                    }
+                } catch (e) {
+                    console.log(`✗ Channel auto-react error: ${e.message}`);
+                }
+                return;
+            }
 
             const from = msg.key.remoteJid;
             if (!from) return;
@@ -138,6 +236,7 @@ async function requestPairingCodeForNumber(number) {
         throw new Error("Bot is already paired to a session");
     }
 
+    await delay(1500);
     const cleaned = number.replace(/[^0-9]/g, "");
     const code = await sock.requestPairingCode(cleaned);
     return code;
