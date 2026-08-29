@@ -1,17 +1,26 @@
 {
-    "name": "sidd-free-bot",
-    "version": "1.0.0",
-    "description": "SIDD FREE BOT - WhatsApp multi-device bot built on Baileys",
-    "main": "index.js",
-    "scripts": {
-        "start": "node index.js"
-    },
-    "engines": {
-        "node": "20.x"
-    },
-    "dependencies": {
-        "@whiskeysockets/baileys": "^7.0.0-rc10",
-        "@hapi/boom": "^10.0.1",
-        "pino": "^9.4.0"
-    }
+  "name": "sidd-free-bot",
+  "version": "1.0.0",
+  "description": "SIDD FREE BOT - Free base WhatsApp bot — pairing-code + MongoDB session",
+  "main": "index.js",
+  "author": "SIDD FREE BOT",
+  "engines": {
+    "node": "20.x"
+  },
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "^7.0.0-rc14",
+    "axios": "latest",
+    "body-parser": "^1.20.2",
+    "cors": "latest",
+    "dotenv": "latest",
+    "express": "^4.18.2",
+    "fs-extra": "^11.2.0",
+    "pino": "^8.17.0",
+    "file-type": "21.0.0",
+    "mongoose": "^8.0.0",
+    "moment-timezone": "^0.6.0"
+  }
 }
