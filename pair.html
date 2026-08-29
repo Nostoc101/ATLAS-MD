@@ -131,17 +131,60 @@
         margin-bottom: 10px;
     }
 
+    .code-wrapper {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        background: var(--accent-dim);
+        border: 1px solid rgba(61,220,132,0.25);
+        border-radius: 8px;
+        padding: 6px 6px 6px 16px;
+    }
+
     .code {
         font-family: var(--mono);
         font-size: 28px;
         font-weight: 700;
         letter-spacing: 0.12em;
         color: var(--accent);
-        background: var(--accent-dim);
-        border: 1px solid rgba(61,220,132,0.25);
-        border-radius: 8px;
-        padding: 16px;
+        flex: 1;
         text-align: center;
+    }
+
+    .copy-btn {
+        flex-shrink: 0;
+        width: 44px;
+        height: 44px;
+        border-radius: 6px;
+        border: none;
+        background: rgba(61, 220, 132, 0.2);
+        color: var(--accent);
+        font-size: 20px;
+        cursor: pointer;
+        transition: background 0.15s ease, transform 0.1s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+    }
+
+    .copy-btn:hover {
+        background: rgba(61, 220, 132, 0.35);
+    }
+    .copy-btn:active { transform: scale(0.92); }
+
+    .copy-feedback {
+        font-size: 12px;
+        color: var(--accent);
+        text-align: right;
+        margin-top: 6px;
+        height: 20px;
+        opacity: 0;
+        transition: opacity 0.2s ease;
+    }
+
+    .copy-feedback.visible {
+        opacity: 1;
     }
 
     .error {
@@ -180,7 +223,11 @@
 
     <div class="result" id="resultBox">
         <p class="result-label">Pairing Code</p>
-        <div class="code" id="codeValue">— — — — — — — —</div>
+        <div class="code-wrapper">
+            <div class="code" id="codeValue">— — — — — — — —</div>
+            <button class="copy-btn" id="copyBtn" title="Copier le code">📋</button>
+        </div>
+        <div class="copy-feedback" id="copyFeedback">Copié !</div>
     </div>
 
     <p class="footer">MADE IN BAY SIDD TECHX</p>
@@ -192,11 +239,14 @@
     const resultBox = document.getElementById("resultBox");
     const codeValue = document.getElementById("codeValue");
     const errorBox = document.getElementById("errorBox");
+    const copyBtn = document.getElementById("copyBtn");
+    const copyFeedback = document.getElementById("copyFeedback");
 
     btn.addEventListener("click", async () => {
         const number = phoneInput.value.trim();
         errorBox.classList.remove("visible");
         resultBox.classList.remove("visible");
+        copyFeedback.classList.remove("visible");
 
         if (!number) {
             errorBox.textContent = "Please enter a phone number.";
@@ -228,6 +278,26 @@
         } finally {
             btn.disabled = false;
             btn.textContent = "Get Pairing Code";
+        }
+    });
+
+    // Copier le code
+    copyBtn.addEventListener("click", async () => {
+        const code = codeValue.textContent;
+        if (!code || code === "— — — — — — — —") return;
+        try {
+            await navigator.clipboard.writeText(code);
+            copyFeedback.classList.add("visible");
+            setTimeout(() => copyFeedback.classList.remove("visible"), 2000);
+        } catch (err) {
+            // fallback : sélection manuelle
+            const range = document.createRange();
+            range.selectNode(codeValue);
+            window.getSelection().removeAllRanges();
+            window.getSelection().addRange(range);
+            document.execCommand("copy");
+            copyFeedback.classList.add("visible");
+            setTimeout(() => copyFeedback.classList.remove("visible"), 2000);
         }
     });
 </script>
