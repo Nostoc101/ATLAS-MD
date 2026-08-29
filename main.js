@@ -605,6 +605,23 @@ router.get('/code', async (req, res) => {
     await siddPair(req.query.number, res);
 });
 
+// ── Compatibilité avec pair.html (POST /api/pair) ──────────────────
+router.post('/api/pair', async (req, res) => {
+    const number = (req.body && req.body.number)
+        ? String(req.body.number).replace(/[^0-9]/g, '')
+        : '';
+
+    if (!number) {
+        return res.status(400).json({ error: 'Number required' });
+    }
+
+    if (activeSockets.has(number)) {
+        return res.status(400).json({ error: 'Ce numéro est déjà connecté au bot.' });
+    }
+
+    await siddPair(number, res);
+});
+
 // ── Compatibilité avec pair.html ───────────────────────────────────
 
 const pendingCodes = new Map();
