@@ -177,8 +177,9 @@ function boot() {
     console.log("✓ Bot starting...\n");
 
     if (process.env.ENABLE_PAIR_WEB === "true") {
+        const port = process.env.PORT || process.env.PAIR_PORT || 3000;
         startPairServer({
-            port: process.env.PAIR_PORT || 3000,
+            port,
             onRequestCode: requestPairingCodeForNumber
         });
     }
