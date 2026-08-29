@@ -18,25 +18,27 @@ npm install
 npm start
 ```
 
-On first run, the bot will ask for your WhatsApp phone number (with country code, no `+`) in the terminal, then print a pairing code. Enter that code in WhatsApp under **Linked Devices → Link with phone number**.
+A web server always starts alongside the bot (on `PORT` env var if set, otherwise `3000`). Open it in your browser to pair:
 
-The session is saved in the `session/` folder. On future restarts, if a valid session exists, no new pairing code will be requested.
-
-### Optional: Web pairing UI
-
-To use `pair.html` instead of the terminal prompt, start the bot with:
-
-```bash
-ENABLE_PAIR_WEB=true npm start
+```
+http://localhost:3000
 ```
 
-Then open `http://localhost:3000` in your browser.
+Enter your WhatsApp number and get your pairing code, then enter it in WhatsApp under **Linked Devices → Link with phone number**.
 
-You can also set the number via environment variable instead of the terminal prompt:
+The session is saved in the `session/` folder. On future restarts, if a valid session exists, no new pairing code is needed.
+
+### Optional: auto-pairing via environment variable
+
+Set `PHONE_NUMBER` and the bot will request a pairing code automatically on startup and print it to the logs — no need to visit the web UI:
 
 ```bash
 PHONE_NUMBER=15551234567 npm start
 ```
+
+### Deploying on Railway
+
+No extra configuration needed. Railway sets `PORT` automatically and the bot's web server binds to it, so the public domain works out of the box. Just open the Railway-generated domain to pair.
 
 ---
 

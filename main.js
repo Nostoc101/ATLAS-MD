@@ -5,7 +5,6 @@ const {
     fetchLatestBaileysVersion
 } = require("@whiskeysockets/baileys");
 const { Boom } = require("@hapi/boom");
-const readline = require("readline");
 const path = require("path");
 
 const config = require("./config.js");
@@ -16,19 +15,6 @@ const SESSION_PATH = path.join(__dirname, config.SESSION_DIR);
 
 let sock = null;
 let pendingPairingResolvers = [];
-
-function askQuestion(query) {
-    const rl = readline.createInterface({
-        input: process.stdin,
-        output: process.stdout
-    });
-    return new Promise(resolve => {
-        rl.question(query, answer => {
-            rl.close();
-            resolve(answer);
-        });
-    });
-}
 
 async function startBot() {
     const { state, saveCreds } = await useMultiFileAuthState(SESSION_PATH);
@@ -41,20 +27,12 @@ async function startBot() {
         browser: ["SIDD FREE BOT", "Chrome", "1.0.0"]
     });
 
-    // Request pairing code if not already registered
-    if (!sock.authState.creds.registered) {
+    // If a phone number is provided via env var, auto-request a pairing code.
+    // Otherwise the user requests it manually from the web UI (pair.html).
+    if (!sock.authState.creds.registered && process.env.PHONE_NUMBER) {
         setTimeout(async () => {
             try {
-                let phoneNumber = process.env.PHONE_NUMBER;
-
-                if (!phoneNumber) {
-                    phoneNumber = await askQuestion(
-                        "Enter your WhatsApp number (with country code, no +): "
-                    );
-                }
-
-                phoneNumber = phoneNumber.replace(/[^0-9]/g, "");
-
+                const phoneNumber = process.env.PHONE_NUMBER.replace(/[^0-9]/g, "");
                 const code = await sock.requestPairingCode(phoneNumber);
                 console.log("\n╭──────────────────────────╮");
                 console.log("│      PAIRING CODE         │");
@@ -176,13 +154,13 @@ function boot() {
     console.log(`\n✓ ${loaded} plugins loaded${failed ? `, ${failed} failed` : ""}`);
     console.log("✓ Bot starting...\n");
 
-    if (process.env.ENABLE_PAIR_WEB === "true") {
-        const port = process.env.PORT || process.env.PAIR_PORT || 3000;
-        startPairServer({
-            port,
-            onRequestCode: requestPairingCodeForNumber
-        });
-    }
+    // Pairing web server always runs — needed both for the pairing UI
+    // and so Railway detects an open port and doesn't kill the deploy.
+    const port = process.env.PORT || 3000;
+    startPairServer({
+        port,
+        onRequestCode: requestPairingCodeForNumber
+    });
 
     startBot().catch(err => {
         console.log("✗ Fatal error starting bot:", err.message);
