@@ -11,7 +11,7 @@ const { runtime } = require('../lib/functions');
 cmd({
     pattern: "alive",
     desc: "Check bot alive status and response details",
-    category: "info",
+    category: "main",
     react: "💚",
     filename: __filename
 }, async (conn, mek, m, { from, reply }) => {

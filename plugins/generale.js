@@ -11,7 +11,7 @@ const os = require('os');
 cmd({
     pattern: "owner",
     desc: "Contact the creator",
-    category: "settings",
+    category: "main",
     react: "👑"
 },
 async(conn, mek, m, { from, myquoted }) => {
