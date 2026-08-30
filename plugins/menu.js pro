@@ -1,0 +1,66 @@
+const { cmd } = require('../sidd');
+const { siddTechx } = require('../lib/style');
+const { runtime } = require('../lib/functions');
+const os = require('os');
+
+// SYNC FROM main.js
+const MASTER_NUMBER = global.MASTER_NUMBER || '2348142334779';
+const ADMIN_NUMBERS = global.ADMIN_NUMBERS || [];
+
+function getUserRole(senderNumber, isAdmins, isOwner) {
+    const num = senderNumber.replace(/[^0-9]/g, '');
+    if (num === MASTER_NUMBER) return '👑 MASTER';
+    if (ADMIN_NUMBERS.includes(num)) return '🛡️ BOT ADMIN';
+    if (isOwner) return '👑 OWNER';
+    if (isAdmins) return '⚡ GROUP ADMIN';
+    return '👤 MEMBER';
+}
+
+cmd({
+    pattern: "menu",
+    alias: ['list', 'help'],
+    desc: "Show bot commands",
+    category: "general",
+    react: "📜",
+    filename: __filename
+},
+async (conn, mek, m, { from, senderNumber, isAdmins, isOwner, pushName, reply }) => {
+    try {
+        const role = getUserRole(senderNumber, isAdmins, isOwner);
+        const uptime = runtime(process.uptime());
+        const ram = (process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2);
+        const totalRam = (os.totalmem() / 1024 / 1024 / 1024).toFixed(2);
+
+        let menu = siddTechx('ATLAS-ULTRA V3 MENU', [
+            `Hello: ${pushName}`,
+            `Role: ${role}`,
+            `Uptime: ${uptime}`,
+            `RAM: ${ram}MB / ${totalRam}GB`,
+            `Prefix: .`
+        ].join('\n'), '👑');
+
+        menu += `\n\n*👑 OWNER / MASTER COMMANDS*`;
+        if(role.includes('MASTER')) menu += `\n> .broadcast <text> - Send to all groups`;
+        if(role.includes('MASTER')) menu += `\n> .panel - Bot dashboard`;
+        if(role.includes('MASTER')) menu += `\n> .addadmin <num> - Add bot admin`;
+        if(role.includes('MASTER')) menu += `\n> .remoteadmin <num> - Remove bot admin`;
+        if(role.includes('MASTER')) menu += `\n> .board - Show all admins`;
+        if(role.includes('MASTER')) menu += `\n> .forceremove @tag - Force kick anyone`;
+        if(role.includes('MASTER')) menu += `\n> .nukeadmins - Kick all admins`;
+
+        menu += `\n\n*🛡️ ADMIN / GROUP COMMANDS*`;
+        if(role.includes('ADMIN')) menu += `\n> .kickall - Remove all non-admins`;
+        if(role.includes('ADMIN')) menu += `\n> .stop - Stop kickall`;
+        if(role.includes('ADMIN')) menu += `\n> .antilink on/off - Anti link system`;
+        if(role.includes('ADMIN')) menu += `\n> .tagall <text> - Tag everyone`;
+        if(role.includes('ADMIN')) menu += `\n> .ginfo - Group information`;
+        if(role.includes('ADMIN')) menu += `\n> .promote @tag - Promote member`;
+        if(role.includes('ADMIN')) menu += `\n> .demote @tag - Demote admin`;
+
+        menu += `\n\n*👤 PUBLIC COMMANDS*`;
+        menu += `\n> .menu - Show this menu`;
+        menu += `\n> .ping - Check bot speed`;
+        menu += `\n> .sticker - Make sticker`;
+        menu += `\n> .song <query> - Download song`;
+
+        menu += `\n
