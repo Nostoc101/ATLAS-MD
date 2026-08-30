@@ -1,9 +1,9 @@
 {
-  "name": "sidd-free-bot",
+  "name": "ATLAS-ULTRA",
   "version": "1.0.0",
-  "description": "SIDD FREE BOT - Free base WhatsApp bot — pairing-code + MongoDB session",
+  "description": "ATLAS-ULTRA FREE BOT - Free base WhatsApp bot — pairing-code + MongoDB session",
   "main": "index.js",
-  "author": "SIDD FREE BOT",
+  "author": "NOSTOC 😈",
   "engines": {
     "node": "20.x"
   },
