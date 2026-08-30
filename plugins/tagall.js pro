@@ -1,0 +1,55 @@
+const { cmd } = require('../sidd');
+const { siddTechx } = require('../lib/style');
+
+// SYNC FROM main.js
+const ADMIN_NUMBERS = global.ADMIN_NUMBERS || [];
+
+function getUserRole(senderNumber, isAdmins) {
+    const num = senderNumber.replace(/[^0-9]/g, '');
+    if (ADMIN_NUMBERS.includes(num) || isAdmins) return true;
+    return false;
+}
+
+cmd({
+    pattern: "tagall",
+    alias: ['all', 'ta'],
+    desc: "Tag all members in group",
+    category: "group",
+    react: "📢",
+    use: ".tagall <message>",
+    filename: __filename
+},
+async (conn, mek, m, { from, args, senderNumber, isGroup, isAdmins, reply }) => {
+    try {
+        if (!isGroup) return reply(siddTechx('TAGALL', 'This command only for groups', '❌'));
+        
+        const hasPerm = getUserRole(senderNumber, isAdmins);
+        if (!hasPerm) return reply(siddTechx('TAGALL', '⛔ ADMIN ONLY COMMAND', '❌'));
+
+        const groupMetadata = await conn.groupMetadata(from);
+        const participants = groupMetadata.participants;
+        
+        const text = args.join(' ') || 'ATTENTION EVERYONE';
+        
+        let mentions = [];
+        let tagText = `*📢 TAGALL*\n\n*Message:* ${text}\n\n`;
+        
+        for(let i = 0; i < participants.length; i++) {
+            tagText += `@${participants[i].id.split('@')[0]} `;
+            mentions.push(participants[i].id);
+            // Add new line every 5 tags to avoid spam
+            if((i + 1) % 5 === 0) tagText += '\n';
+        }
+        
+        tagText += `\n\n_Total: ${participants.length} members_`;
+
+        await conn.sendMessage(from, {
+            text: tagText,
+            mentions: mentions
+        }, { quoted: mek });
+
+    } catch (e) {
+        console.error('Tagall error:', e);
+        reply(siddTechx('TAGALL', 'Error tagging all', '❌'));
+    }
+});
