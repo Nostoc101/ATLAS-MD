@@ -2,13 +2,14 @@ const { cmd } = require('../sidd');
 const { t } = require('../lib/i18n');
 const style = require('../lib/style');
 
-// ATLAS-ULTRA ROLES - Must match main.js
-const MASTER_NUMBER = '2348142334779'; // CHANGE TO YOUR NUMBER
-let ADMIN_NUMBERS = []; // This will be synced from main.js
+// ATLAS-ULTRA ROLES - SYNCED FROM main.js GLOBALLY
+const MASTER_NUMBER = global.MASTER_NUMBER || '2348142334779'; // CHANGE TO YOUR NUMBER
+const ADMIN_NUMBERS = global.ADMIN_NUMBERS || []; // This is synced from main.js
 
 function getUserRole(senderNumber, isAdmins) {
-    if (senderNumber === MASTER_NUMBER) return 'master';
-    if (ADMIN_NUMBERS.includes(senderNumber)) return 'botadmin';
+    const num = senderNumber.replace(/[^0-9]/g, ''); // ADD THIS TO MATCH main.js
+    if (num === MASTER_NUMBER) return 'master';
+    if (ADMIN_NUMBERS.includes(num)) return 'botadmin'; // CHECK CLEAN NUMBER
     if (isAdmins) return 'groupadmin';
     return 'guest';
 }
@@ -33,12 +34,12 @@ async (conn, mek, m, { from, isGroup, isAdmins, senderNumber, isBotAdmins, reply
         let creator = groupMetadata.owner? `@${groupMetadata.owner.split('@')[0]}` : 'UNKNOWN';
 
         const groupAdmins = groupMetadata.participants
-           .filter(member => member.admin)
-           .map((admin, index) => `${index + 1}. @${admin.id.split('@')[0]}`)
-           .join("\n") || "NO ADMIN FOUND";
+          .filter(member => member.admin)
+          .map((admin, index) => `${index + 1}. @${admin.id.split('@')[0]}`)
+          .join("\n") || "NO ADMIN FOUND";
 
         const creationDate = groupMetadata.creation
-           ? new Date(groupMetadata.creation * 1000).toLocaleString('en-US', {
+          ? new Date(groupMetadata.creation * 1000).toLocaleString('en-US', {
                 weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit'
             })
             : 'UNKNOWN';
@@ -101,7 +102,7 @@ async (conn, mek, m, { from, isGroup, senderNumber, isAdmins, groupMetadata, gro
                     return;
                 }
                 await conn.groupParticipantsUpdate(from, [participant.id], "remove")
-                   .catch(err => console.error(`KICKALL REMOVE ERROR ${participant.id}:`, err));
+                  .catch(err => console.error(`KICKALL REMOVE ERROR ${participant.id}:`, err));
                 await delay(1000);
             }
         }
@@ -137,7 +138,8 @@ cmd({
 },
 async (conn, mek, m, { from, isGroup, senderNumber, reply }) => {
     if (!isGroup) return reply(style.error(t(from, 'plugin_groups_only')));
-    if (senderNumber!== MASTER_NUMBER) return reply(style.error('⛔ MASTER ONLY COMMAND'));
+    const userRole = getUserRole(senderNumber); // USE getUserRole INSTEAD OF DIRECT CHECK
+    if (userRole!== 'master') return reply(style.error('⛔ MASTER ONLY COMMAND'));
 
     const target = mek.message.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
     if (!target) return reply(style.error(`Usage:.forceremove @tag`));
@@ -160,7 +162,8 @@ cmd({
 },
 async (conn, mek, m, { from, isGroup, senderNumber, reply }) => {
     if (!isGroup) return reply(style.error(t(from, 'plugin_groups_only')));
-    if (senderNumber!== MASTER_NUMBER) return reply(style.error('⛔ MASTER ONLY COMMAND'));
+    const userRole = getUserRole(senderNumber); // USE getUserRole INSTEAD OF DIRECT CHECK
+    if (userRole!== 'master') return reply(style.error('⛔ MASTER ONLY COMMAND'));
 
     try {
         const groupMeta = await conn.groupMetadata(from);
