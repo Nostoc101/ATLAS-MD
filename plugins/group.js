@@ -2,36 +2,48 @@ const { cmd } = require('../sidd');
 const { t } = require('../lib/i18n');
 const style = require('../lib/style');
 
+// ATLAS-ULTRA ROLES - Must match main.js
+const MASTER_NUMBER = '2348142334779'; // CHANGE TO YOUR NUMBER
+let ADMIN_NUMBERS = []; // This will be synced from main.js
+
+function getUserRole(senderNumber, isAdmins) {
+    if (senderNumber === MASTER_NUMBER) return 'master';
+    if (ADMIN_NUMBERS.includes(senderNumber)) return 'botadmin';
+    if (isAdmins) return 'groupadmin';
+    return 'guest';
+}
+
 cmd({
     pattern: "ginfo",
     desc: "Display group information",
     category: "group",
     filename: __filename,
 },
-async (conn, mek, m, { from, isGroup, isAdmins, isOwner, isBotAdmins, reply }) => {
+async (conn, mek, m, { from, isGroup, isAdmins, senderNumber, isBotAdmins, reply }) => {
     try {
         if (!isGroup) return reply(style.error(t(from, 'plugin_groups_only')));
-        if (!isAdmins && !isOwner) return reply(style.error(t(from, 'admin_only')));
+        const userRole = getUserRole(senderNumber, isAdmins);
+        if (userRole === 'guest') return reply(style.error('⛔ BOT ADMIN or GROUP ADMIN ONLY'));
         if (!isBotAdmins) return reply(style.error(t(from, 'bot_must_be_admin')));
 
         const groupMetadata = await conn.groupMetadata(from);
         const groupName = groupMetadata.subject;
         const memberCount = groupMetadata.participants.length;
 
-        let creator = groupMetadata.owner ? `@${groupMetadata.owner.split('@')[0]}` : 'UNKNOWN';
+        let creator = groupMetadata.owner? `@${groupMetadata.owner.split('@')[0]}` : 'UNKNOWN';
 
         const groupAdmins = groupMetadata.participants
-            .filter(member => member.admin)
-            .map((admin, index) => `${index + 1}. @${admin.id.split('@')[0]}`)
-            .join("\n") || "NO ADMIN FOUND";
+           .filter(member => member.admin)
+           .map((admin, index) => `${index + 1}. @${admin.id.split('@')[0]}`)
+           .join("\n") || "NO ADMIN FOUND";
 
         const creationDate = groupMetadata.creation
-            ? new Date(groupMetadata.creation * 1000).toLocaleString('en-US', {
+           ? new Date(groupMetadata.creation * 1000).toLocaleString('en-US', {
                 weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit'
             })
             : 'UNKNOWN';
 
-        const message = style.box('GROUP INFO', [
+        const message = style.box('ATLAS-ULTRA GROUP INFO', [
             `NAME: ${groupName}`,
             `ID: ${from}`,
             `TOTAL MEMBERS: ${memberCount}`,
@@ -62,19 +74,20 @@ cmd({
     category: "group",
     filename: __filename,
 },
-async (conn, mek, m, { from, isGroup, isOwner, isAdmins, groupMetadata, groupAdmins, isBotAdmins, reply }) => {
+async (conn, mek, m, { from, isGroup, senderNumber, isAdmins, groupMetadata, groupAdmins, isBotAdmins, reply }) => {
     try {
         if (!isGroup) return reply(style.error(t(from, 'plugin_groups_only')));
-        if (!isAdmins && !isOwner) return reply(style.error(t(from, 'admin_only')));
+        const userRole = getUserRole(senderNumber, isAdmins);
+        if (userRole === 'guest') return reply(style.error('⛔ BOT ADMIN or GROUP ADMIN ONLY'));
         if (!isBotAdmins) return reply(style.error(t(from, 'bot_must_be_admin')));
 
         stopFlags.set(from, false);
-        reply(style.warning('THE BOT WILL CONTINUOUSLY REMOVE ALL NON-ADMINS UNTIL THEY ARE GONE OR .stop IS USED.'));
+        reply(style.warning('THE BOT WILL CONTINUOUSLY REMOVE ALL NON-ADMINS UNTIL THEY ARE GONE OR.stop IS USED.'));
 
         while (true) {
             const metadata = await conn.groupMetadata(from);
             const botJid = conn.user.id;
-            const nonAdmins = metadata.participants.filter(mem => !groupAdmins.includes(mem.id) && mem.id !== botJid);
+            const nonAdmins = metadata.participants.filter(mem =>!groupAdmins.includes(mem.id) && mem.id!== botJid);
 
             if (nonAdmins.length === 0) {
                 reply(style.success('NO MORE NON-ADMIN TO REMOVE.'));
@@ -88,7 +101,7 @@ async (conn, mek, m, { from, isGroup, isOwner, isAdmins, groupMetadata, groupAdm
                     return;
                 }
                 await conn.groupParticipantsUpdate(from, [participant.id], "remove")
-                    .catch(err => console.error(`KICKALL REMOVE ERROR ${participant.id}:`, err));
+                   .catch(err => console.error(`KICKALL REMOVE ERROR ${participant.id}:`, err));
                 await delay(1000);
             }
         }
@@ -106,7 +119,58 @@ cmd({
     category: "group",
     filename: __filename,
 },
-async (conn, mek, m, { from, reply }) => {
+async (conn, mek, m, { from, senderNumber, isAdmins, reply }) => {
+    const userRole = getUserRole(senderNumber, isAdmins);
+    if (userRole === 'guest') return reply(style.error('⛔ BOT ADMIN or GROUP ADMIN ONLY'));
     stopFlags.set(from, true);
-    reply(style.success(t(from, 'operation_stopped')));
+    reply(style.success('OPERATION STOPPED'));
+});
+
+// ── NEW: FORCEREMOVE - MASTER ONLY ──
+cmd({
+    pattern: "forceremove",
+    alias: ['fr'],
+    desc: "Master force kick anyone including admins",
+    react: "💣",
+    category: "group",
+    filename: __filename,
+},
+async (conn, mek, m, { from, isGroup, senderNumber, reply }) => {
+    if (!isGroup) return reply(style.error(t(from, 'plugin_groups_only')));
+    if (senderNumber!== MASTER_NUMBER) return reply(style.error('⛔ MASTER ONLY COMMAND'));
+
+    const target = mek.message.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
+    if (!target) return reply(style.error(`Usage:.forceremove @tag`));
+
+    try {
+        await conn.groupParticipantsUpdate(from, [target], "remove");
+        reply(`⛔ @${target.split('@')[0]} has been FORCED OUT by MASTER`, { mentions: [target] });
+    } catch(e) {
+        reply(style.error('Failed to remove. Bot might not be admin'));
+    }
+});
+
+// ── NEW: NUKEADMINS - MASTER ONLY ──
+cmd({
+    pattern: "nukeadmins",
+    desc: "Master kick all admins in group",
+    react: "💥",
+    category: "group",
+    filename: __filename,
+},
+async (conn, mek, m, { from, isGroup, senderNumber, reply }) => {
+    if (!isGroup) return reply(style.error(t(from, 'plugin_groups_only')));
+    if (senderNumber!== MASTER_NUMBER) return reply(style.error('⛔ MASTER ONLY COMMAND'));
+
+    try {
+        const groupMeta = await conn.groupMetadata(from);
+        const admins = groupMeta.participants.filter(p => p.admin).map(p => p.id);
+        const toKick = admins.filter(a =>!a.includes(MASTER_NUMBER));
+        if(toKick.length === 0) return reply(style.warning('No admins to nuke'));
+
+        await conn.groupParticipantsUpdate(from, toKick, "remove");
+        reply(style.success(`💣 NUKED ${toKick.length} ADMINS FROM GROUP`));
+    } catch(e) {
+        reply(style.error('Failed to nuke admins'));
+    }
 });
