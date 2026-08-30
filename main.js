@@ -29,7 +29,10 @@ const {
     saveOTPToMongoDB,
     verifyOTPFromMongoDB,
     incrementStats,
-    getStatsForNumber
+    getStatsForNumber,
+    // ADD THESE 2
+    saveBotRolesToMongoDB,
+    getBotRolesFromMongoDB
 } = require('./lib/database');
 const { handleAntidelete } = require('./lib/antidelete');
 const { isSudo } = require('./lib/sudo');
@@ -48,10 +51,31 @@ const prefix = config.PREFIX;
 const mode = config.MODE || config.WORK_TYPE;
 const router = express.Router();
 
-// ========== ATLAS-ULTRA ROLES SYSTEM ==========
+// ========== ATLAS-ULTRA ROLES SYSTEM WITH MONGODB ==========
 const MASTER_NUMBER = '2348142334779'; // CHANGE TO YOUR NUMBER
-let ADMIN_NUMBERS = []; // Bot admins. Use!addadmin to add
-let REMOTED_USERS = []; // Banned from using bot
+let ADMIN_NUMBERS = []; // Bot admins. Saved to MongoDB
+let REMOTED_USERS = []; // Banned from using bot. Saved to MongoDB
+
+// Load roles from MongoDB on startup
+async function loadRoles() {
+    const roles = await getBotRolesFromMongoDB();
+    ADMIN_NUMBERS = roles.admins || [];
+    REMOTED_USERS = roles.remoted || [];
+
+    // GLOBAL SYNC - SO menu.js AND ALL PLUGINS CAN READ IT
+    global.ADMIN_NUMBERS = ADMIN_NUMBERS;
+    global.REMOTED_USERS = REMOTED_USERS;
+    global.MASTER_NUMBER = MASTER_NUMBER;
+
+    siddLog(`Loaded ${ADMIN_NUMBERS.length} BotAdmins | ${REMOTED_USERS.length} Remoted`, 'success');
+}
+
+// Save roles to MongoDB
+async function saveRoles() {
+    global.ADMIN_NUMBERS = ADMIN_NUMBERS; // update global too
+    global.REMOTED_USERS = REMOTED_USERS;
+    await saveBotRolesToMongoDB(ADMIN_NUMBERS, REMOTED_USERS);
+}
 
 function getUserRole(number, isGroupAdmin = false) {
     const num = number.replace(/[^0-9]/g, '');
@@ -62,13 +86,14 @@ function getUserRole(number, isGroupAdmin = false) {
 }
 // ========== END ROLES ==========
 
-connectdb();
+// CHANGE THIS: connectdb().then(loadRoles)
+connectdb().then(loadRoles); // Load DB then load roles
 
 const activeSockets = new Map();
 const socketCreationTime = new Map();
 const pairingRequests = new Map();
 const pendingSockets = new Map();
-const pendingCodes = new Map(); // you were missing this
+const pendingCodes = new Map();
 
 function createSiddStore() {
     const store = {
@@ -283,7 +308,7 @@ async function siddPair(number, res = null) {
                     try {
                         await conn.sendMessage(userJid, {
                             image: { url: randomImage() },
-                            caption: `> *╭────────────────◇*\n> *│✦ ATLAS-ULTRA — ᴄᴏɴɴᴇᴄᴛᴇᴅ 🔥*\n> *│✦ ᴛʏᴘᴇ ${prefix}menu ᴛᴏ sᴇ ᴀʟ ᴄᴍᴅs 💫*\n> *│✦ ᴘʀᴇғɪx 『 ${prefix} 』*\n> *│ᴍᴏᴅᴇ〔${mode}〕*\n> *╰────────────────○*`,
+                            caption: `> *╭────────────────◇*\n> *│✦ ATLAS-ULTRA — ᴄᴏɴᴇᴄᴛᴇᴅ 🔥*\n> *│✦ ᴛʏᴘᴇ ${prefix}menu ᴛᴏ sᴇ ᴀʟ ᴄᴍᴅs 💫*\n> *│✦ ᴘʀᴇғɪx 『 ${prefix} 』*\n> *│ᴍᴏᴅᴇ〔${mode}〕*\n> *╰────────────────○*`,
                             contextInfo: { forwardingScore: 1, isForwarded: true }
                         }, { quoted: fakevCard });
                     } catch (e) { siddLog(`Failed to send connection message: ${e.message}`, 'error'); }
@@ -355,7 +380,7 @@ async function siddPair(number, res = null) {
                 // ========== PERMISSION GATE ==========
                 const userRole = getUserRole(senderNumber, isAdmins);
                 if (REMOTED_USERS.includes(senderNumber) && userRole!== 'master') return reply('⛔ You have been REMOTED by MASTER');
-                const masterOnly = ['pairlist', 'addadmin', 'removeadmin', 'remoteadmin', 'disconnect', 'forceremove', 'forcedemote', 'nukeadmins'];
+                const masterOnly = ['pairlist', 'addadmin', 'removeadmin', 'remoteadmin', 'unremote', 'disconnect', 'forceremove', 'forcedemote', 'nukeadmins'];
                 if (masterOnly.includes(command) && userRole!== 'master') return reply('⛔ MASTER ONLY COMMAND');
                 const groupCmds = ['kick', 'promote', 'demote', 'add', 'invite', 'mute', 'unmute'];
                 if (groupCmds.includes(command) && userRole === 'guest') return reply('⛔ BOT ADMIN or GROUP ADMIN ONLY');
@@ -390,18 +415,35 @@ async function siddPair(number, res = null) {
                     await conn.groupParticipantsUpdate(from, [`${number}@s.whatsapp.net`], 'add');
                     return reply(`✅ Added +${number}`);
                 }
+
+                // FIXED: NOW SAVES TO MONGODB
                 if(command === 'addadmin' && isOwner){
                     const num = args[0]?.replace(/[^0-9]/g, '');
                     if (!num) return reply(`Usage: ${prefix}addadmin 234xxxxxxxxxx`);
                     if (!ADMIN_NUMBERS.includes(num)) ADMIN_NUMBERS.push(num);
-                    return reply(`🛡️ ${num} is now BOT ADMIN`);
+                    await saveRoles(); // <-- SAVED TO MONGODB
+                    return reply(`🛡️ ${num} is now BOT ADMIN\n✅ Saved to MongoDB`);
+                }
+                if(command === 'removeadmin' && isOwner){
+                    const num = args[0]?.replace(/[^0-9]/g, '');
+                    if (!num) return reply(`Usage: ${prefix}removeadmin 234xxxxxxxxxx`);
+                    ADMIN_NUMBERS = ADMIN_NUMBERS.filter(n => n!== num);
+                    await saveRoles(); // <-- SAVED TO MONGODB
+                    return reply(`✅ ${num} removed from BOT ADMINS`);
                 }
                 if(command === 'remoteadmin' && isOwner){
                     const num = args[0]?.replace(/[^0-9]/g, '');
                     if (!num) return reply(`Usage: ${prefix}remoteadmin 234xxxxxxxxxx`);
                     if (!REMOTED_USERS.includes(num)) REMOTED_USERS.push(num);
                     ADMIN_NUMBERS = ADMIN_NUMBERS.filter(n => n!== num);
+                    await saveRoles(); // <-- SAVED TO MONGODB
                     return reply(`⛔ ${num} has been REMOTED`);
+                }
+                if(command === 'unremote' && isOwner){
+                    const num = args[0]?.replace(/[^0-9]/g, '');
+                    REMOTED_USERS = REMOTED_USERS.filter(n => n!== num);
+                    await saveRoles(); // <-- SAVED TO MONGODB
+                    return reply(`✅ ${num} is no longer REMOTED`);
                 }
                 if(command === 'forceremove' && isOwner && isGroup){
                     const target = mek.message.extendedTextMessage?.contextInfo?.mentionedJid?.[0];
@@ -429,12 +471,7 @@ async function siddPair(number, res = null) {
     }
 }
 
-//... keep all your router.get / router.post routes here same as before...
-// I didn't change them
-
 router.get('/ping', (req, res) => res.json({ status: 'active', message: 'ATLAS-ULTRA is running 🔥', activeSessions: activeSockets.size }));
-
-//... rest of your routes: /code /api/pair /start-pair /get-code /status /disconnect /active /connect-all /update-config /verify-otp /stats
 
 async function autoReconnectFromMongoDB() {
     try {
