@@ -1,0 +1,110 @@
+const { cmd } = require('../sidd');
+const { siddTechx } = require('../lib/style');
+const { getSetting, setSetting } = require('../lib/database'); // We will save per group
+
+const ADMIN_NUMBERS = global.ADMIN_NUMBERS || [];
+
+function getUserRole(senderNumber, isAdmins) {
+    const num = senderNumber.replace(/[^0-9]/g, '');
+    if (ADMIN_NUMBERS.includes(num) || isAdmins) return true;
+    return false;
+}
+
+const antilinkWarnings = new Map(); // "group:sender" -> count
+
+const linkPatterns = [
+    /https?:\/\/(?:chat\.whatsapp\.com|wa\.me)\/\S+/gi,
+    /https?:\/\/(www\.)?whatsapp\.com\/channel\/\S+/gi,
+    /https?:\/\/(?:t\.me|telegram\.me)\/\S+/gi,
+    /https?:\/\/(?:www\.)?youtube\.com\/\S+/gi,
+    /https?:\/\/youtu\.be\/\S+/gi,
+    /https?:\/\/(?:www\.)?facebook\.com\/\S+/gi,
+    /https?:\/\/(?:www\.)?instagram\.com\/\S+/gi,
+    /https?:\/\/(?:www\.)?twitter\.com\/\S+/gi,
+    /https?:\/\/(?:www\.)?x\.com\/\S+/gi,
+    /https?:\/\/(?:www\.)?tiktok\.com\/\S+/gi,
+    /https?:\/\/discord\.gg\/\S+/gi,
+    /https?:\/\/\S+\.\S{2,6}(\/\S*)?/gi, // catch-all
+];
+
+// =========== ANTILINK ON/OFF ===========
+cmd({
+    pattern: "antilink",
+    desc: "Enable/disable antilink - saves to MongoDB",
+    category: "group",
+    react: "🔗",
+    use: ".antilink on/off",
+    filename: __filename
+},
+async (conn, mek, m, { from, args, isGroup, isAdmins, isBotAdmins, senderNumber, reply }) => {
+    try {
+        if (!isGroup) return reply(siddTechx('ANTILINK', 'Groups only', '❌'));
+        if (!getUserRole(senderNumber, isAdmins)) return reply(siddTechx('ANTILINK', '⛔ ADMIN ONLY', '❌'));
+        if (!isBotAdmins) return reply(siddTechx('ANTILINK', 'Bot must be admin', '❌'));
+
+        const action = (args[0] || '').toLowerCase();
+        if (!['on', 'off'].includes(action)) {
+            return reply(siddTechx('ANTILINK', 'Usage:.antilink on/off', '❓'));
+        }
+
+        const key = `antilink_${from}`;
+        if (action === 'on') {
+            await setSetting(key, true);
+            reply(siddTechx('ANTILINK', '🟢 Antilink ACTIVATED\n1st warn + delete\n2nd kick', '✅'));
+        } else {
+            await setSetting(key, false);
+            // Clear warnings
+            for (const k of antilinkWarnings.keys()) {
+                if (k.startsWith(from + ':')) antilinkWarnings.delete(k);
+            }
+            reply(siddTechx('ANTILINK', '🔴 Antilink DEACTIVATED', '❌'));
+        }
+
+    } catch (e) {
+        console.error('Antilink cmd error:', e);
+        reply(siddTechx('ANTILINK', 'Error occurred', '❌'));
+    }
+});
+
+// =========== DETECTOR ===========
+cmd({
+    on: "body"
+},
+async (conn, mek, m, { from, body, sender, isGroup, isAdmins, isBotAdmins }) => {
+    try {
+        if (!isGroup || isAdmins ||!isBotAdmins) return;
+        if (mek.key?.fromMe) return;
+
+        const isEnabled = await getSetting(`antilink_${from}`);
+        if (!isEnabled) return;
+
+        const hasLink = linkPatterns.some(p => {
+            p.lastIndex = 0;
+            return p.test(body || '');
+        });
+        if (!hasLink) return;
+
+        const warnKey = `${from}:${sender}`;
+        const warnings = antilinkWarnings.get(warnKey) || 0;
+
+        try { await conn.sendMessage(from, { delete: mek.key }); } catch {}
+
+        if (warnings === 0) {
+            antilinkWarnings.set(warnKey, 1);
+            await conn.sendMessage(from, {
+                text: `⚠️ @${sender.split('@')[0]} Don't send links!\nThis is your 1st warning. Next time = KICK`,
+                mentions: [sender]
+            });
+        } else {
+            antilinkWarnings.delete(warnKey);
+            await conn.sendMessage(from, {
+                text: `🚫 @${sender.split('@')[0]} REMOVED!\nReason: Sending link after warning`,
+                mentions: [sender]
+            });
+            await conn.groupParticipantsUpdate(from, [sender], "remove");
+        }
+
+    } catch (e) {
+        console.error('Antilink detect error:', e);
+    }
+});
